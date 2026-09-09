@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-
 # Create a test client using our FastAPI application.
 client = TestClient(app)
 
@@ -65,3 +64,144 @@ def test_create_user_duplicate_email():
 
     # Verify that the API returns the expected error message.
     assert response.json()["detail"] == "User with this email already exists"
+
+# Test that the API rejects a registration request
+# when the email address is not in a valid email format.
+def test_create_user_invalid_email():
+    response = client.post(
+        "/users/",
+        json={
+            "email": "not-an-email",
+            "password": "MySecret1234",
+            "full_name": "Invalid Email User",
+        },
+    )
+
+    # FastAPI should return HTTP 422 when request validation fails.
+    assert response.status_code == 422
+
+# Test that the API rejects a registration request
+# when the required email field is completely missing.
+def test_create_user_missing_email():
+    response = client.post(
+        "/users/",
+        json={
+            "password": "MySecret1234",
+            "full_name": "Missing Email User",
+        },
+    )
+
+    # FastAPI should return HTTP 422 when a required field is missing.
+    assert response.status_code == 422
+
+    # Test that a user's password is hashed before it is stored
+# in the database and that the original password is never stored.
+def test_password_is_hashed():
+    client.post(
+        "/users/",
+        json={
+            "email": "hash@example.com",
+            "password": "MySecret1234",
+            "full_name": "Hash Test User",
+        },
+    )
+
+    # Import the User model so we can inspect the database record
+    # directly during this security-focused test.
+    from app.models.user import User
+    from tests.conftest import TestingSessionLocal
+
+    db = TestingSessionLocal()
+
+    try:
+        user = (
+            db.query(User)
+            .filter(User.email == "hash@example.com")
+            .first()
+        )
+
+        # A user should have been created successfully.
+        assert user is not None
+
+        # A password hash must exist in the database.
+        assert user.password_hash
+
+        # The original plain-text password must never be stored.
+        assert user.password_hash != "MySecret1234"
+
+    finally:
+        # Always close the database session after inspecting the record.
+        db.close()
+
+# Test that an existing user can be retrieved using their database ID.
+def test_get_user():
+    create_response = client.post(
+        "/users/",
+        json={
+            "email": "getuser@example.com",
+            "password": "MySecret1234",
+            "full_name": "Get User Test",
+        },
+    )
+
+    # Confirm that the user was created successfully before
+    # attempting to retrieve them.
+    assert create_response.status_code == 201
+
+    user_id = create_response.json()["id"]
+
+    # Request the newly created user using their database ID.
+    response = client.get(f"/users/{user_id}")
+
+    # An existing user should be returned successfully.
+    assert response.status_code == 200
+
+    data = response.json()
+
+    # Verify that the returned user is the one we created.
+    assert data["id"] == user_id
+    assert data["email"] == "getuser@example.com"
+    assert data["full_name"] == "Get User Test"
+
+    # Sensitive password information must never be exposed.
+    assert "password" not in data
+    assert "password_hash" not in data
+
+# Test that the API returns a 404 error when a user
+# with the requested ID does not exist.
+def test_get_user_not_found():
+    response = client.get("/users/99999")
+
+    # The API should return HTTP 404 when the user cannot be found.
+    assert response.status_code == 404
+
+    # Verify that the API returns the expected error message.
+    assert response.json()["detail"] == "User not found"
+
+# Test that the API rejects a registration request
+# when the required password field is missing.
+def test_create_user_missing_password():
+    response = client.post(
+        "/users/",
+        json={
+            "email": "missingpassword@example.com",
+            "full_name": "Missing Password User",
+        },
+    )
+
+    # FastAPI should return HTTP 422 when a required field is missing.
+    assert response.status_code == 422
+
+    # Test that the API rejects a registration request
+# when the required full_name field is missing.
+def test_create_user_missing_full_name():
+    response = client.post(
+        "/users/",
+        json={
+            "email": "missingname@example.com",
+            "password": "MySecret1234",
+        },
+    )
+
+    # FastAPI should return HTTP 422 when a required field is missing.
+    assert response.status_code == 422
