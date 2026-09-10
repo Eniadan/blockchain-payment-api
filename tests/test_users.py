@@ -1,9 +1,16 @@
+# Pytest provides the test runner and utilities such as pytest.raises().
+import pytest
+
+# MagicMock allows us to simulate database behavior
+# without intentionally breaking the real test database.
+from unittest.mock import MagicMock
+
 # TestClient allows us to test our FastAPI endpoints
 # without manually starting the server or sending requests through Swagger.
 from fastapi.testclient import TestClient
 
 from app.main import app
-
+from app.schemas.user import UserCreate
 # Create a test client using our FastAPI application.
 client = TestClient(app)
 
@@ -205,3 +212,32 @@ def test_create_user_missing_full_name():
 
     # FastAPI should return HTTP 422 when a required field is missing.
     assert response.status_code == 422
+
+    # Test that a database failure during user creation
+# causes the transaction to be rolled back.
+def test_create_user_rolls_back_on_database_error():
+    from app.services.user_service import create_user
+
+    # Create a fake database session so we can control
+    # database behavior without changing our real test database.
+    db = MagicMock()
+
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    # Simulate a database failure when commit() is called.
+    db.commit.side_effect = Exception("Database error")
+
+    user_data = UserCreate(
+        email="rollback@example.com",
+        password="MySecret1234",
+        full_name="Rollback Test User",
+    )
+
+    # The service should re-raise the database error after
+    # rolling back the failed transaction.
+    with pytest.raises(Exception, match="Database error"):
+        create_user(db, user_data)
+
+    # Verify that rollback() was called after the database failure.
+    db.rollback.assert_called_once()
+
