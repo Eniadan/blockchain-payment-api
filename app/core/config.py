@@ -14,6 +14,17 @@ class Settings(BaseSettings):
     # Configure Pydantic Settings to load values from our .env file.
     # extra="ignore" allows the .env file to contain settings that
     # are not defined in this Settings class.
+
+        # Secret used to sign and verify JWT access tokens.
+    # This value must come from the environment and should never be hard-coded.
+    jwt_secret_key: str
+
+    # Algorithm used to sign JWT tokens.
+    jwt_algorithm: str = "HS256"
+
+    # Controls how long an access token remains valid.
+    access_token_expire_minutes: int = 30
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
